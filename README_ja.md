@@ -1,16 +1,18 @@
 # nginx + WebDAV テンポラリコンテナ
 
-Light-weight temporary webdav storage server, designed for GitHub Actions artifacts.
+GitHub Actions の artifact 置き場として使うことを想定した、軽量な WebDAV テンポラリストレージサーバーです。
+
+[![Docker Image Version](https://img.shields.io/docker/v/kekyo/nginx-webdav-temporary.svg?label=docker)](https://hub.docker.com/r/kekyo/nginx-webdav-temporary)
 
 ---
 
-For English version, see [README.md](./README.md).
+英語版は [README.md](./README.md) を参照してください。
 
 ## これは何?
 
-`nginx + WebDAV + autoindex` を使った簡易ストレージ用コンテナ定義が含まれています。
+`nginx + WebDAV + autoindex` を使った簡易ストレージ用コンテナ定義です。
 
-想定用途は、GitHub Actions などから HTTP 経由で中間生成物を保存し、人間がブラウザでディレクトリ一覧を確認できるようにすることです。
+主な用途は、GitHub Actions などから HTTP 経由で中間生成物を保存しつつ、人間がブラウザでディレクトリ一覧を確認できるようにすることです。
 
 ## 構成概要
 
@@ -21,87 +23,54 @@ For English version, see [README.md](./README.md).
 - 削除: `DELETE`
 - ディレクトリ作成: `MKCOL`
 - 一覧表示: Nginx 標準の `autoindex`
-- コンテナ内保存先: `/var/lib/webdav`
-- 待ち受けポート: `8080`
-
-現在の設定では、次のような Nginx 設定になっています。
-
-- `client_max_body_size 1g`
-- `create_full_put_path on`
-- `min_delete_depth 2`
-- `autoindex on`
-- `autoindex_format html`
-
-`min_delete_depth 2` のため、浅すぎるパスは `DELETE` できません。
-
-## 前提条件
-
-- `podman` が使えること
-- `curl` が使えること
-- ホスト側に永続化先ディレクトリを作成できること
+- コンテナ内保存先: `/var/lib/webdav` (起動時変更可能)
+- 待ち受けポート: `8080` (起動時変更可能)
 
 ---
 
-## セットアップ
+## 起動方法
 
-### 1. イメージを build する
+`docker` またはコンテナ互換環境が必要です。
+公開イメージ名は `docker.io/kekyo/nginx-webdav-temporary` です [(docker.ioページ)](https://hub.docker.com/r/kekyo/nginx-webdav-temporary)。
+
+最新版を pull する例:
 
 ```bash
-make build
+docker pull docker.io/kekyo/nginx-webdav-temporary:latest
 ```
 
-明示的にイメージ名を指定する場合:
+Docker で起動する例:
 
 ```bash
-podman build -t temp-storage-nginx-webdav:local .
-```
-
-### 2. データ保存用ディレクトリを作成する
-
-```bash
-mkdir -p ./data
-```
-
-### 3. コンテナを起動する
-
-```bash
-podman run -d \
-  --name temp-storage-nginx-webdav \
+docker run -d \
+  --name nginx-webdav-temporary \
   -p 8080:8080 \
   -e WEBDAV_USERNAME=storage-user \
   -e WEBDAV_PASSWORD=storage-pass \
   -v "$(pwd)/data:/var/lib/webdav" \
-  temp-storage-nginx-webdav:test
+  docker.io/kekyo/nginx-webdav-temporary:latest
 ```
-
-`WEBDAV_USERNAME` と `WEBDAV_PASSWORD` は必須です。未指定だとコンテナ起動時に失敗します。
 
 起動時に `/var/lib/webdav` 配下の既存ファイルをすべて削除したい場合は、`WEBDAV_CLEAR_STORAGE_ON_STARTUP=true` を指定してください。
 
 ```bash
-podman run -d \
-  --name temp-storage-nginx-webdav \
+docker run -d \
+  --name nginx-webdav-temporary \
   -p 8080:8080 \
   -e WEBDAV_USERNAME=storage-user \
   -e WEBDAV_PASSWORD=storage-pass \
   -e WEBDAV_CLEAR_STORAGE_ON_STARTUP=true \
   -v "$(pwd)/data:/var/lib/webdav" \
-  temp-storage-nginx-webdav:test
+  docker.io/kekyo/nginx-webdav-temporary:latest
 ```
 
 このオプションを有効にすると、コンテナ起動時にストレージルート自体は残したまま、その配下のファイルとディレクトリを削除します。
 
-ホスト側ディレクトリを SELinux 環境で bind mount する場合は、必要に応じて `:Z` を付けてください。
-
-```bash
--v "$(pwd)/data:/var/lib/webdav:Z"
-```
-
 ---
 
-## 使用方法 (Actions runner/クライアント側)
+## 使用方法
 
-以下では、次の値を使う前提で例を示します。
+以下の例では、次の環境変数を使う前提にしています。
 
 ```bash
 export WEBDAV_URL="http://127.0.0.1:8080"
@@ -111,13 +80,13 @@ export WEBDAV_PASS="storage-pass"
 
 ### ディレクトリ一覧を表示する
 
-ブラウザで次の URL を開くか、`curl` を使います。
+ブラウザで開くか、`curl` を使います。
 
 ```bash
 curl -u "${WEBDAV_USER}:${WEBDAV_PASS}" "${WEBDAV_URL}/"
 ```
 
-サブディレクトリ一覧を見る場合は、末尾に `/` を付けてください。
+サブディレクトリを見る場合は末尾に `/` を付けてください。
 
 ```bash
 curl -u "${WEBDAV_USER}:${WEBDAV_PASS}" "${WEBDAV_URL}/runs/run-1/job-1/"
@@ -184,14 +153,137 @@ steps:
         "${WEBDAV_URL}/runs/${GITHUB_RUN_ID}/${GITHUB_JOB}/artifact.tgz"
 ```
 
+## 権限に関する注意
+
+このイメージは、現在の rootless Podman 環境でも通常の Docker 利用でも bind mount を扱いやすくするため、少し強めの権限設定を使っています。
+
+- Nginx worker はコンテナ内で `root` として動作します。
+- そのため Docker で bind mount を使うと、ホスト側では作成ファイルが `root:root` に見えることがあります。
+- rootless Podman では、環境によって subuid/subgid のマッピング後の所有者で見える場合があります。
+- ホスト側の ownership が重要なら、bind mount ではなく named volume を使うか、事前に運用ポリシーに合う権限を付けたディレクトリを用意してください。
+
+また、起動時スクリプトで `/var/lib/webdav` と `/var/lib/nginx/body` に対して `chmod -R a+rwX` を適用するため、マウントした保存先が書き込み可能な状態になります。
+
 ## 運用上の注意
 
-- 認証は Basic 認証なので、実運用では TLS 終端を必ず用意してください。
-- 一覧表示は人間向けの簡易確認用です。機械処理の主系統は、決め打ちのパスを使う方が安定します。
-- これはオブジェクトストレージではなく、HTTP 越しのファイル置き場です。TTL 管理や掃除は別途必要です。
-- サイズ上限は現在 `1g` です。必要なら [nginx.conf](./nginx.conf) を変更してください。
+- 認証は Basic 認証なので、本番利用では前段で TLS 終端を必ず用意してください。
+- 一覧表示は人間向けの簡易確認用です。機械処理の主系統は、決め打ちパスを使う方が安定します。
+- これはオブジェクトストレージではなく HTTP 越しのファイル置き場です。掃除や retention は別途管理が必要です。
+- 現在のサイズ上限は `1g` です。必要なら [nginx.conf](./nginx.conf) を変更してください。
+
+現在の Nginx 設定には次が含まれます。
+
+- `client_max_body_size 1g`
+- `create_full_put_path on`
+- `min_delete_depth 2`
+- `autoindex on`
+- `autoindex_format html`
+
+`min_delete_depth` が `2` なので、浅すぎるパスは `DELETE` できません。
 
 ---
+
+## systemdとの統合
+
+以下のファイルを配置することで、systemdで制御できます。
+
+`/etc/systemd/system/container-nginx-webdav-temporary.service`:
+
+```ini
+[Unit]
+Description=Podman container-nginx-webdav-temporary.service
+Documentation=man:podman-generate-systemd(1)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=%t/containers
+
+[Service]
+Environment=PODMAN_SYSTEMD_UNIT=%n
+Restart=on-failure
+TimeoutStopSec=70
+ExecStartPre=/bin/rm -f %t/%n.ctr-id
+ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --sdnotify=conmon --replace -p 8080:8080 -e WEBDAV_USERNAME=*************** -e WEBDAV_PASSWORD=*************** -e WEBDAV_CLEAR_STORAGE_ON_STARTUP=true -v /storage0/temp_artifacts:/var/lib/webdav -d --name nginx-webdav-temporary nginx-webdav-temporary:test
+ExecStop=/usr/bin/podman stop --ignore --cidfile=%t/%n.ctr-id
+ExecStopPost=/usr/bin/podman rm -f --ignore --cidfile=%t/%n.ctr-id
+Type=notify
+NotifyAccess=all
+
+[Install]
+WantedBy=default.target
+```
+
+更に、 `/etc/systemd/system/container-nginx-webdav-temporary.timer` を配置して、毎日再起動させることができます:
+
+```ini
+[Unit]
+Description=Reset container
+
+[Timer]
+OnCalendar=03:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+```
+
+`WEBDAV_CLEAR_STORAGE_ON_STARTUP=true` を指定しているので、再起動毎にストレージは削除され、クリーンアップされます
+（もちろん、このオプションを外して永続化もできます）。
+
+サービスとして有効化します:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable container-nginx-webdav-temporary
+sudo systemctl start container-nginx-webdav-temporary
+```
+
+---
+
+## ソースから build する
+
+ビルド環境:
+
+- `podman`
+- `curl`
+- [`screw-up-native`](https://github.com/kekyo/screw-up-native)
+
+Podman でローカル build する例:
+
+```bash
+make build
+```
+
+デフォルトのローカルイメージ名は次です。
+
+```text
+localhost/nginx-webdav-temporary:test
+```
+
+`screw-up format` から計算される version を表示する例:
+
+```bash
+make print-version
+```
+
+`linux/amd64` と `linux/arm64` の multi-arch manifest をローカル build する例:
+
+```bash
+make build-multiarch
+```
+
+Docker Hub へ multi-arch イメージを push する例:
+
+```bash
+podman login docker.io
+make push-multiarch
+```
+
+デフォルトでは、`make push-multiarch` は次のタグへ push します。
+
+- `docker.io/kekyo/nginx-webdav-temporary:{version}`
+- `docker.io/kekyo/nginx-webdav-temporary:latest`
+
+ここで `{version}` は `printf '{version}\n' | screw-up format` の結果です。
 
 ## 動作確認
 
@@ -201,11 +293,13 @@ steps:
 make test
 ```
 
-このテストでは次を一通り確認します。
+このテストでは次を確認します。
 
 - イメージ build
 - コンテナ起動
 - 認証付き一覧表示
+- 通常起動時に既存ファイルが保持されること
+- `WEBDAV_CLEAR_STORAGE_ON_STARTUP=true` で既存ファイルが削除されること
 - `PUT`
 - アップロード後の一覧確認
 - `GET`
@@ -213,8 +307,6 @@ make test
 - 未認証アクセス時の `401`
 - 削除後の `404`
 
----
-
 ## ライセンス
 
-Under MIT.
+MIT です。

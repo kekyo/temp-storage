@@ -5,6 +5,7 @@ IMAGE_NAME="${1:-temp-storage-nginx-webdav:test}"
 CONTAINER_NAME="temp-storage-nginx-webdav-test"
 USERNAME="ci-user"
 PASSWORD="ci-pass"
+HOST_PLATFORM="$(podman info --format '{{.Host.OS}}/{{.Host.Arch}}')"
 STORAGE_DIR="$(mktemp -d)"
 WORKDIR="$(mktemp -d)"
 
@@ -19,7 +20,7 @@ cleanup
 
 mkdir -p "${STORAGE_DIR}" "${WORKDIR}"
 
-podman build -t "${IMAGE_NAME}" .
+podman build --platform "${HOST_PLATFORM}" -t "${IMAGE_NAME}" .
 
 mkdir -p "${STORAGE_DIR}/preexisting"
 printf 'keep me\n' > "${STORAGE_DIR}/preexisting/keep.txt"
